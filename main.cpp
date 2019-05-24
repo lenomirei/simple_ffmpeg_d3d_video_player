@@ -29,8 +29,6 @@ FILE *fp = NULL;
 //Bit per Pixel
 const int bpp = 12;
 
-unsigned char buffer[pixel_w*pixel_h*bpp / 8];
-
 void Cleanup()
 {
 	EnterCriticalSection(&m_critial);
@@ -79,60 +77,6 @@ int InitD3D(HWND hwnd, unsigned long lWidth, unsigned long lHeight)
 		return -1;
 
 	return 0;
-}
-
-bool Render()
-{
-	HRESULT lRet;
-	//Read Data
-	//RGB
-	if (fread(buffer, 1, pixel_w*pixel_h*bpp / 8, fp) != pixel_w * pixel_h*bpp / 8) {
-		// Loop
-		fseek(fp, 0, SEEK_SET);
-		fread(buffer, 1, pixel_w*pixel_h*bpp / 8, fp);
-	}
-
-	if (m_pDirect3DSurfaceRender == NULL)
-		return -1;
-	D3DLOCKED_RECT d3d_rect;
-	lRet = m_pDirect3DSurfaceRender->LockRect(&d3d_rect, NULL, D3DLOCK_DONOTWAIT);
-	if (FAILED(lRet))
-		return -1;
-
-	byte *pSrc = buffer;
-	byte * pDest = (BYTE *)d3d_rect.pBits;
-	int stride = d3d_rect.Pitch;
-	unsigned long i = 0;
-
-	//Copy Data
-	for (i = 0; i < pixel_h; i++) {
-		memcpy(pDest + i * stride, pSrc + i * pixel_w, pixel_w);
-	}
-	for (i = 0; i < pixel_h / 2; i++) {
-		memcpy(pDest + stride * pixel_h + i * stride / 2, pSrc + pixel_w * pixel_h + pixel_w * pixel_h / 4 + i * pixel_w / 2, pixel_w / 2);
-	}
-	for (i = 0; i < pixel_h / 2; i++) {
-		memcpy(pDest + stride * pixel_h + stride * pixel_h / 4 + i * stride / 2, pSrc + pixel_w * pixel_h + i * pixel_w / 2, pixel_w / 2);
-	}
-
-	lRet = m_pDirect3DSurfaceRender->UnlockRect();
-	if (FAILED(lRet))
-		return -1;
-
-	if (m_pDirect3DDevice == NULL)
-		return -1;
-
-	m_pDirect3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
-	m_pDirect3DDevice->BeginScene();
-	IDirect3DSurface9 * pBackBuffer = NULL;
-
-	m_pDirect3DDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer);
-	m_pDirect3DDevice->StretchRect(m_pDirect3DSurfaceRender, NULL, pBackBuffer, &m_rtViewport, D3DTEXF_LINEAR);
-	m_pDirect3DDevice->EndScene();
-	m_pDirect3DDevice->Present(NULL, NULL, NULL, NULL);
-
-
-	return true;
 }
 
 LRESULT WINAPI MyWndProc(HWND hwnd, UINT msg, WPARAM wparma, LPARAM lparam)
