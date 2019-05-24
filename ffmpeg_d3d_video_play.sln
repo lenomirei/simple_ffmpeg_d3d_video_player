@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28307.645
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ffmpeg_d3d_video_play", "ffmpeg_d3d_video_play\ffmpeg_d3d_video_play.vcxproj", "{B090571E-C4AA-453F-A44A-CA7650D256C2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ffmpeg_d3d_video_play", "ffmpeg_d3d_video_play.vcxproj", "{B090571E-C4AA-453F-A44A-CA7650D256C2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +26,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {1AA7C24E-C7B7-46AE-92CC-CA036B5DDA3B}
+		SolutionGuid = {B0C51EED-5153-4752-96F2-84223C391B9E}
 	EndGlobalSection
 EndGlobal
