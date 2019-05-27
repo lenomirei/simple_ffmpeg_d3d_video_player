@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <d3d9.h>
-
+#include <queue>
 
 extern "C"
 {
@@ -18,6 +18,21 @@ CRITICAL_SECTION  m_critial;
 IDirect3D9 *m_pDirect3D9 = NULL;
 IDirect3DDevice9 *m_pDirect3DDevice = NULL;
 IDirect3DSurface9 *m_pDirect3DSurfaceRender = NULL;
+AVFormatContext	*format_context = NULL;
+static int video_stream_idx = -1;
+AVCodecContext	*codec_context = NULL;
+AVCodec			*codec = NULL;
+AVFrame	*frame, *frame_YUV = NULL;
+unsigned char *out_buffer = NULL;
+AVPacket packet;
+AVStream *video_stream = NULL;
+enum AVPixelFormat pix_fmt;
+int y_size;
+int width, height;
+int ret;
+struct SwsContext *img_convert_ctx = NULL;
+
+std::queue<AVPacket*> packet_queue;
 
 RECT m_rtViewport;
 
@@ -142,38 +157,27 @@ int OpenCodecContext(int *stream_idx,
 	return 0;
 }
 
-int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, __in LPSTR lpCmdLine, __in int nShowCmd) 
-{
-	AVFormatContext	*format_context = NULL;
-	static int video_stream_idx = -1;
-	AVCodecContext	*codec_context = NULL;
-	AVCodec			*codec = NULL;
-	AVFrame	*frame, *frame_YUV = NULL;
-	unsigned char *out_buffer = NULL;
-	AVPacket packet;
-	AVStream *video_stream = NULL;
-	enum AVPixelFormat pix_fmt;
-	int y_size;
-	int width, height;
-	int ret;
-	struct SwsContext *img_convert_ctx = NULL;
+
+
+
+void ReadFrame() {
 
 	char filepath[] = "¡¾MV¡¿Lucky¡îOrb feat. Hatsune Miku by emon(Tes.)  - ¥é¥Ã¥­©`¡î¥ª©`¥Ö feat. ³õÒô¥ß¥¯ by emon(Tes.) ¡¾MIKU EXPO 5th¡¿.webm";
 	//char filepath[] = "udp://@224.4.5.6:1234";
 
-	if (avformat_open_input(&format_context, filepath, NULL, NULL) < 0) 
+	if (avformat_open_input(&format_context, filepath, NULL, NULL) < 0)
 	{
 		fprintf(stderr, "Could not open source file %s\n", filepath);
 		exit(1);
 	}
 
-	if (avformat_find_stream_info(format_context, NULL) < 0) 
+	if (avformat_find_stream_info(format_context, NULL) < 0)
 	{
 		fprintf(stderr, "Could not find stream information\n");
 		exit(1);
 	}
 
-	if (OpenCodecContext(&video_stream_idx, &codec_context, format_context, AVMEDIA_TYPE_VIDEO, filepath) >= 0) 
+	if (OpenCodecContext(&video_stream_idx, &codec_context, format_context, AVMEDIA_TYPE_VIDEO, filepath) >= 0)
 	{
 		video_stream = format_context->streams[video_stream_idx];
 
@@ -182,10 +186,10 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 		height = codec_context->height;
 		pix_fmt = codec_context->pix_fmt;
 	}
-	if (!video_stream) 
+	if (!video_stream)
 	{
 		fprintf(stderr, "Could not find audio or video stream in the input, aborting\n");
-		return -1;
+		return;
 	}
 
 	frame = av_frame_alloc();
@@ -196,7 +200,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 	if (!frame && !frame_YUV)
 	{
 		fprintf(stderr, "Could not allocate frame\n");
-		return AVERROR(ENOMEM);
+		return;
 	}
 
 	av_init_packet(&packet);
@@ -206,6 +210,77 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 	img_convert_ctx = sws_getContext(codec_context->width, codec_context->height, codec_context->pix_fmt,
 		codec_context->width, codec_context->height, AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
 
+	while (av_read_frame(format_context, &packet) >= 0) {
+		if (packet.stream_index == video_stream_idx) {
+			packet_queue.push(new AVPacket(packet));
+		}
+	}
+}
+
+void DecodeFrame() {
+	while (1) {
+		int return_code;
+		if (packet_queue.size() != 0) {
+			AVPacket *decode_packet = packet_queue.front();
+			return_code = avcodec_send_packet(codec_context, decode_packet);
+
+			packet_queue.pop();
+		}
+		while (return_code >= 0)
+		{
+			return_code = avcodec_receive_frame(codec_context, frame);
+			if (return_code == AVERROR(EAGAIN) || return_code == AVERROR_EOF)
+				break;
+			else if (return_code < 0)
+			{
+				printf("Decode error\n");
+			}
+			sws_scale(img_convert_ctx, (const unsigned char* const*)frame->data, frame->linesize, 0, codec_context->height,
+				frame_YUV->data, frame_YUV->linesize);
+			y_size = codec_context->width*codec_context->height;
+
+			HRESULT lRet;
+			if (m_pDirect3DSurfaceRender == NULL)
+				return;
+			D3DLOCKED_RECT d3d_rect;
+			lRet = m_pDirect3DSurfaceRender->LockRect(&d3d_rect, NULL, D3DLOCK_DONOTWAIT);
+			if (FAILED(lRet))
+				return
+			byte * pDest = (BYTE *)d3d_rect.pBits;
+			int stride = d3d_rect.Pitch;
+			unsigned long i = 0;
+			for (i = 0; i < pixel_h; i++) { // Y
+				memcpy(pDest + i * stride, frame_YUV->data[0] + i * pixel_w, pixel_w);
+			}
+			for (i = 0; i < pixel_h / 2; i++) { // V
+				memcpy(pDest + stride * pixel_h + i * stride / 2, frame_YUV->data[2] + i * pixel_w / 2, pixel_w / 2);
+			}
+			for (i = 0; i < pixel_h / 2; i++) { // U
+				memcpy(pDest + stride * pixel_h + stride * pixel_h / 4 + i * stride / 2, frame_YUV->data[1] + i * stride / 2, pixel_w / 2);
+			}
+
+			lRet = m_pDirect3DSurfaceRender->UnlockRect();
+			if (FAILED(lRet))
+				return;
+
+			if (m_pDirect3DDevice == NULL)
+				return;
+
+			m_pDirect3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+			m_pDirect3DDevice->BeginScene();
+			IDirect3DSurface9 * pBackBuffer = NULL;
+
+			m_pDirect3DDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer);
+			m_pDirect3DDevice->StretchRect(m_pDirect3DSurfaceRender, NULL, pBackBuffer, &m_rtViewport, D3DTEXF_LINEAR);
+			m_pDirect3DDevice->EndScene();
+			m_pDirect3DDevice->Present(NULL, NULL, NULL, NULL);
+		}
+
+	}
+}
+
+int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, __in LPSTR lpCmdLine, __in int nShowCmd) 
+{
 	WNDCLASSEXW wc;
 	ZeroMemory(&wc, sizeof(wc));
 
@@ -305,6 +380,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 						m_pDirect3DDevice->Present(NULL, NULL, NULL, NULL);
 					}
 				}
+				av_packet_unref(&packet);
 			}
 		}
 	}
