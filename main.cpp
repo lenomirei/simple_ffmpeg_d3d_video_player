@@ -158,10 +158,14 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 	int ret;
 	struct SwsContext *img_convert_ctx = NULL;
 
-	char filepath[] = "¡¾MV¡¿Lucky¡îOrb feat. Hatsune Miku by emon(Tes.)  - ¥é¥Ã¥­©`¡î¥ª©`¥Ö feat. ³õÒô¥ß¥¯ by emon(Tes.) ¡¾MIKU EXPO 5th¡¿.webm";
-	//char filepath[] = "udp://@224.4.5.6:1234";
-
-	if (avformat_open_input(&format_context, filepath, NULL, NULL) < 0) 
+	//char filepath[] = "¡¾MV¡¿Lucky¡îOrb feat. Hatsune Miku by emon(Tes.)  - ¥é¥Ã¥­©`¡î¥ª©`¥Ö feat. ³õÒô¥ß¥¯ by emon(Tes.) ¡¾MIKU EXPO 5th¡¿.webm";
+  //char filepath[] = "test1.mp4";
+	char filepath[] = "udp://224.4.5.6:1234";
+  AVDictionary* format_opts = nullptr;
+  av_register_all();
+  av_dict_set(&format_opts, "localaddr", "192.168.1.150", 0);
+  int leno_return = avformat_open_input(&format_context, filepath, NULL, &format_opts);
+	if (leno_return < 0)
 	{
 		fprintf(stderr, "Could not open source file %s\n", filepath);
 		exit(1);
@@ -264,7 +268,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 						{
 							printf("Decode error\n");
 						}
-						sws_scale(img_convert_ctx, (const unsigned char* const*)frame->data, frame->linesize, 0, codec_context->height,
+						int ret = sws_scale(img_convert_ctx, (const unsigned char* const*)frame->data, frame->linesize, 0, codec_context->height,
 							frame_YUV->data, frame_YUV->linesize);
 						y_size = codec_context->width*codec_context->height;
 
