@@ -1,4 +1,4 @@
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
+ï»¿#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <windows.h>
 #include <d3d9.h>
 #include <iostream>
@@ -14,8 +14,9 @@ extern "C"
 #include "libavutil/imgutils.h"
 }
 
-#include <WinSock2.h>
-#include <WS2tcpip.h>
+#include<winsock2.h>
+#include<WS2tcpip.h>	//ip_mreqÍ·
+#include <wsrm.h>
 
 #pragma comment(lib,"ws2_32.lib")
 
@@ -169,34 +170,38 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
     int y_size;
     struct SwsContext *img_convert_ctx = NULL;
 
-    SOCKET serSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);	//´´½¨·þÎñÆ÷socket
-    if (INVALID_SOCKET == serSocket)
-    {
-        std::cout << "socket error!" << std::endl;
-        return 0;
-    }
-    //ÉèÖÃ´«ÊäÐ­Òé¡¢¶Ë¿ÚÒÔ¼°Ä¿µÄµØÖ· 
-    sockaddr_in serAddr;
-    serAddr.sin_family = AF_INET;
-    serAddr.sin_port = htons(1234);
-    serAddr.sin_addr.S_un.S_addr = INADDR_ANY;
+    FILE *fp;
+    fopen_s(&fp, "leno_test.h264", "wb+");
 
-    if (bind(serSocket, (sockaddr*)&serAddr, sizeof(serAddr)) == SOCKET_ERROR)	 //½«socket°ó¶¨µØÖ· 
-    {
-        std::cout << "bind error" << std::endl;
-        closesocket(serSocket);
-        return 0;
-    }
-    sockaddr_in clientAddr;
-    int iAddrlen = sizeof(clientAddr);
+    SOCKET        s,
+        sclient;
+    SOCKADDR_IN   salocal,
+        sasession;
+    int           sasessionsz, dwSessionPort;
 
-    //¼ÓÈë×é²¥×é
-    ip_mreq multiCast;
-    multiCast.imr_interface.S_un.S_addr = INADDR_ANY;		//±¾µØÄ³Ò»ÍøÂçÉè±¸½Ó¿ÚµÄIPµØÖ·¡£
-    multiCast.imr_multiaddr.S_un.S_addr = inet_addr("224.4.5.6");	//×é²¥×éµÄIPµØÖ·¡£
-    setsockopt(serSocket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multiCast, sizeof(multiCast));
+    s = socket(AF_INET, SOCK_RDM, IPPROTO_RM);
+
+    dwSessionPort = 1234;
+    salocal.sin_family = AF_INET;
+    salocal.sin_port = htons(dwSessionPort);
+    salocal.sin_addr.s_addr = inet_addr("224.4.5.6");
+
     int receive_buf_size = 65536 * 10;
-    if (setsockopt(serSocket, SOL_SOCKET, SO_RCVBUF, (char*)&receive_buf_size, sizeof(receive_buf_size)) < 0)
+    if (setsockopt(s, SOL_SOCKET, SO_RCVBUF, (char*)&receive_buf_size, sizeof(receive_buf_size)) < 0)
+    {
+        std::cout << "cccccccccccc" << std::endl;
+    }
+
+    bind(s, (SOCKADDR *)&salocal, sizeof(salocal));
+
+
+    listen(s, 10);
+
+    sasessionsz = sizeof(sasession);
+    sclient = accept(s, (SOCKADDR *)&sasession, &sasessionsz);
+
+
+    if (setsockopt(sclient, SOL_SOCKET, SO_RCVBUF, (char*)&receive_buf_size, sizeof(receive_buf_size)) < 0)
     {
         std::cout << "cccccccccccc" << std::endl;
     }
@@ -291,9 +296,10 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
         else {
             //Sleep(10);
             memset(inbuf, 0, INBUF_SIZE);
-            data_size = recvfrom(serSocket, (char *)inbuf, INBUF_SIZE, 0, (sockaddr*)&clientAddr, &iAddrlen);
+            data_size = recv(sclient, (char *)inbuf, INBUF_SIZE, 0);
             if (!data_size)
                 continue;
+
             data = inbuf;
             while (data_size > 0)
             {
@@ -371,7 +377,9 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 
     UnregisterClassW(L"D3D", hInstance);
 
-    closesocket(serSocket);
+    closesocket(s);
+    closesocket(sclient);
+    fclose(fp);
     WSACleanup();
     return 0;
 }
