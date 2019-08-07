@@ -1,6 +1,7 @@
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <windows.h>
-#include <stdio.h>
 #include <d3d9.h>
+#include <iostream>
 
 
 extern "C"
@@ -13,6 +14,11 @@ extern "C"
 #include "libavutil/imgutils.h"
 }
 
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+
+#pragma comment(lib,"ws2_32.lib")
+
 CRITICAL_SECTION  m_critial;
 
 IDirect3D9 *m_pDirect3D9 = NULL;
@@ -22,9 +28,8 @@ IDirect3DSurface9 *m_pDirect3DSurfaceRender = NULL;
 RECT m_rtViewport;
 
 //Width, Height
-const int screen_w = 480, screen_h = 272;
-const int pixel_w = 480, pixel_h = 272;
-FILE *fp = NULL;
+const int screen_w = 1280, screen_h = 720;
+const int pixel_w = 1280, pixel_h = 720;
 
 //Bit per Pixel
 const int bpp = 12;
@@ -142,15 +147,18 @@ int OpenCodecContext(int *stream_idx,
     return 0;
 }
 
-#define INBUF_SIZE 4096
+#define INBUF_SIZE 1400
 
 int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, __in LPSTR lpCmdLine, __in int nShowCmd)
 {
-    const char *filename;
+    WSADATA WSAData;
+    WORD sockVersion = MAKEWORD(2, 2);
+    if (WSAStartup(sockVersion, &WSAData) != 0)
+        return 0;
+
     const AVCodec *codec;
     AVCodecParserContext *parser;
     AVCodecContext *codec_context = NULL;
-    FILE *file;
     AVFrame *frame,*frame_YUV;
     uint8_t inbuf[INBUF_SIZE + AV_INPUT_BUFFER_PADDING_SIZE];
     uint8_t *data;
@@ -161,8 +169,37 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
     int y_size;
     struct SwsContext *img_convert_ctx = NULL;
 
+    SOCKET serSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);	//创建服务器socket
+    if (INVALID_SOCKET == serSocket)
+    {
+        std::cout << "socket error!" << std::endl;
+        return 0;
+    }
+    //设置传输协议、端口以及目的地址 
+    sockaddr_in serAddr;
+    serAddr.sin_family = AF_INET;
+    serAddr.sin_port = htons(1234);
+    serAddr.sin_addr.S_un.S_addr = INADDR_ANY;
 
-    filename = "bigbuckbunny_480x272.m2v";
+    if (bind(serSocket, (sockaddr*)&serAddr, sizeof(serAddr)) == SOCKET_ERROR)	 //将socket绑定地址 
+    {
+        std::cout << "bind error" << std::endl;
+        closesocket(serSocket);
+        return 0;
+    }
+    sockaddr_in clientAddr;
+    int iAddrlen = sizeof(clientAddr);
+
+    //加入组播组
+    ip_mreq multiCast;
+    multiCast.imr_interface.S_un.S_addr = INADDR_ANY;		//本地某一网络设备接口的IP地址。
+    multiCast.imr_multiaddr.S_un.S_addr = inet_addr("224.4.5.6");	//组播组的IP地址。
+    setsockopt(serSocket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multiCast, sizeof(multiCast));
+    int receive_buf_size = 65536 * 10;
+    if (setsockopt(serSocket, SOL_SOCKET, SO_RCVBUF, (char*)&receive_buf_size, sizeof(receive_buf_size)) < 0)
+    {
+        std::cout << "cccccccccccc" << std::endl;
+    }
 
     packet = av_packet_alloc();
     if (!packet)
@@ -172,7 +209,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
     memset(inbuf + INBUF_SIZE, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     /* find the MPEG-1 video decoder */
-    codec = avcodec_find_decoder(AV_CODEC_ID_MPEG2VIDEO);
+    codec = avcodec_find_decoder(AV_CODEC_ID_H264);
     if (!codec) {
         fprintf(stderr, "Codec not found\n");
         exit(1);
@@ -199,12 +236,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
         fprintf(stderr, "Could not open codec\n");
         exit(1);
     }
-    errno_t err;
-    err = fopen_s(&file, filename, "rb");
-    if (!file) {
-        fprintf(stderr, "Could not open %s\n", filename);
-        exit(1);
-    }
+
 
     frame = av_frame_alloc();
     frame_YUV = av_frame_alloc();
@@ -212,12 +244,12 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
         fprintf(stderr, "Could not allocate video frame\n");
         exit(1);
     }
-    out_buffer = (unsigned char *)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P, 480, 272, 1));
+    out_buffer = (unsigned char *)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P, 1280, 720, 1));
     av_image_fill_arrays(frame_YUV->data, frame_YUV->linesize, out_buffer,
-        AV_PIX_FMT_YUV420P, 480, 272, 1);
+        AV_PIX_FMT_YUV420P, 1280, 720, 1);
 
-    img_convert_ctx = sws_getContext(480, 272, AV_PIX_FMT_YUV420P,
-        480, 272, AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
+    img_convert_ctx = sws_getContext(1280, 720, AV_PIX_FMT_YUV420P,
+        1280, 720, AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
 
     WNDCLASSEXW wc;
     ZeroMemory(&wc, sizeof(wc));
@@ -231,7 +263,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
     RegisterClassExW(&wc);
 
     HWND hwnd = NULL;
-    hwnd = CreateWindowW(L"D3D", L"Simplest Video Play Direct3D (Surface)", WS_OVERLAPPEDWINDOW, 100, 100, 480, 272, NULL, NULL, hInstance, NULL);
+    hwnd = CreateWindowW(L"D3D", L"Simplest Video Play Direct3D (Surface)", WS_OVERLAPPEDWINDOW, 100, 100, 1280, 720, NULL, NULL, hInstance, NULL);
     if (hwnd == NULL)
     {
         return -1;
@@ -257,11 +289,9 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
             DispatchMessage(&msg);
         }
         else {
-            Sleep(10);
-            // Render();
-            if (feof(file))
-                continue;
-            data_size = fread(inbuf, 1, INBUF_SIZE, file);
+            //Sleep(10);
+            memset(inbuf, 0, INBUF_SIZE);
+            data_size = recvfrom(serSocket, (char *)inbuf, INBUF_SIZE, 0, (sockaddr*)&clientAddr, &iAddrlen);
             if (!data_size)
                 continue;
             data = inbuf;
@@ -288,9 +318,9 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
                         {
                             printf("Decode error\n");
                         }
-                        sws_scale(img_convert_ctx, (const unsigned char* const*)frame->data, frame->linesize, 0, 272,
+                        sws_scale(img_convert_ctx, (const unsigned char* const*)frame->data, frame->linesize, 0, 720,
                             frame_YUV->data, frame_YUV->linesize);
-                        y_size = 480*272;
+                        y_size = 1280*720;
 
                         HRESULT lRet;
                         if (m_pDirect3DSurfaceRender == NULL)
@@ -299,7 +329,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
                         lRet = m_pDirect3DSurfaceRender->LockRect(&d3d_rect, NULL, D3DLOCK_DONOTWAIT);
                         if (lRet == D3DERR_WASSTILLDRAWING) {
                             //  surface still drawing.
-                            Sleep(100);
+                            //Sleep(100);
                             continue;
                         }
 
@@ -341,5 +371,7 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 
     UnregisterClassW(L"D3D", hInstance);
 
+    closesocket(serSocket);
+    WSACleanup();
     return 0;
 }
