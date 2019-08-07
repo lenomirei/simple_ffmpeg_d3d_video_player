@@ -190,14 +190,16 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 
 	frame = av_frame_alloc();
 	frame_YUV = av_frame_alloc();
-	out_buffer = (unsigned char *)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P, codec_context->width, codec_context->height, 1));
-	av_image_fill_arrays(frame_YUV->data, frame_YUV->linesize, out_buffer,
-		AV_PIX_FMT_YUV420P, codec_context->width, codec_context->height, 1);
-	if (!frame && !frame_YUV)
+	
+	if (!frame || !frame_YUV)
 	{
 		fprintf(stderr, "Could not allocate frame\n");
 		return AVERROR(ENOMEM);
 	}
+
+    out_buffer = (unsigned char *)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P, codec_context->width, codec_context->height, 1));
+    av_image_fill_arrays(frame_YUV->data, frame_YUV->linesize, out_buffer,
+        AV_PIX_FMT_YUV420P, codec_context->width, codec_context->height, 1);
 
 	av_init_packet(&packet);
 	packet.data = NULL;
@@ -273,6 +275,13 @@ int WINAPI WinMain(__in HINSTANCE hInstance, __in_opt HINSTANCE hPrevInstance, _
 							return -1;
 						D3DLOCKED_RECT d3d_rect;
 						lRet = m_pDirect3DSurfaceRender->LockRect(&d3d_rect, NULL, D3DLOCK_DONOTWAIT);
+                        if (lRet == D3DERR_WASSTILLDRAWING) {
+                            //  surface still drawing.
+                            // 这样处理会丢掉一些视频帧，按理说应该有个缓冲区等待渲染才对
+                            Sleep(100);
+                            continue;
+                        }
+
 						if (FAILED(lRet))
 							return -1;
 						byte * pDest = (BYTE *)d3d_rect.pBits;
